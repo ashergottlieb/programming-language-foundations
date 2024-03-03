@@ -2320,6 +2320,7 @@ Qed.
 (* FILL IN HERE
 
     [] *)
+(* TODO *)
 
 (** **** Exercise: 4 stars, advanced, optional (capprox)
 
@@ -2348,30 +2349,65 @@ Definition capprox (c1 c2 : com) : Prop := forall (st st' : state),
     the other. *)
 
 Definition c3 : com
-  (* REPLACE THIS LINE WITH ":= _your_definition_ ." *). Admitted.
+  := <{ X := 1 }>.
 Definition c4 : com
-  (* REPLACE THIS LINE WITH ":= _your_definition_ ." *). Admitted.
+  := <{ X := 2 }>.
 
 Theorem c3_c4_different : ~ capprox c3 c4 /\ ~ capprox c4 c3.
-Proof. (* FILL IN HERE *) Admitted.
+Proof.
+  split; intros H.
+  - unfold capprox in H.
+    specialize H with empty_st (X !-> 1).
+    assert (empty_st =[ c4 ]=> (X !-> 1)).
+    + apply H.
+      apply E_Asgn.
+      reflexivity.
+    + inversion H0.
+      subst.
+      apply equal_f with X in H5.
+      discriminate H5.
+  - unfold capprox in H.
+    specialize H with empty_st (X !-> 2).
+    assert (empty_st =[ c3 ]=> (X !-> 2)).
+    + apply H.
+      apply E_Asgn.
+      reflexivity.
+    + inversion H0.
+      subst.
+      apply equal_f with X in H5.
+      discriminate H5.
+Qed.
 
 (** Find a program [cmin] that approximates every other program. *)
 
 Definition cmin : com
-  (* REPLACE THIS LINE WITH ":= _your_definition_ ." *). Admitted.
+  := <{ while true do skip end }>.
 
 Theorem cmin_minimal : forall c, capprox cmin c.
-Proof. (* FILL IN HERE *) Admitted.
+Proof.
+  intros c st st' H.
+  apply while_true_nonterm in H.
+  - contradiction.
+  - apply refl_bequiv.
+Qed.
 
 (** Finally, find a non-trivial property which is preserved by
     program approximation (when going from left to right). *)
 
+(* This seems pretty trivial, but I can't come up with a non-trivial one.
+   [capprox] only really says that the terminating traces in [c1] must exist in [c2]. *)
 Definition zprop (c : com) : Prop
-  (* REPLACE THIS LINE WITH ":= _your_definition_ ." *). Admitted.
+  := exists st st', st =[ c ]=> st'.
 
 Theorem zprop_preserving : forall c c',
   zprop c -> capprox c c' -> zprop c'.
-Proof. (* FILL IN HERE *) Admitted.
+Proof.
+  intros c c' [st [st' Hc]] H.
+  apply H in Hc.
+  exists st, st'.
+  assumption.
+Qed.
+
 (** [] *)
 
 (* 2024-01-02 21:54 *)
