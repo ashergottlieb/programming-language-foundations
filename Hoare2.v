@@ -2012,9 +2012,162 @@ Qed.
     the rest of the formal development leading up to the
     [verification_correct] theorem. *)
 
-(* FILL IN HERE
+Module Dcom2.
 
-    [] *)
+(*
+I'm not 100% confident that this is the answer they were looking for.
+I removed *all* the postconditions from each dcom, with the final postcondition
+being contained in the [decorated] type's constructor.
+
+That way, through backwards reasoning, we can obtain the postconditions for each
+individual component dcom by propagating that final postcondition backwards.
+Since Skip, Seq, Asgn, and If are all fairly "mechanical" in how backwards reasoning is done,
+I don't think we need any decoration at all.
+This includes the decorations on the branches of an "If".
+
+Without While-loops, the language probably isn't even turing complete.
+So, I think the only decoration that is needed is for the While-loop,
+and we need to decorate it with a loop invariant.
+
+I think the next part about weakest preconditions will address this in more detail.
+*)
+
+Inductive dcom : Type :=
+| DCSkip
+  (* skip *)
+| DCSeq (d1 d2 : dcom)
+  (* d1 ; d2 *)
+| DCAsgn (X : string) (a : aexp)
+  (* X := a *)
+| DCIf (b : bexp) (d1 : dcom) (d2 : dcom)
+  (* if b then d1 else d2 end *)
+| DCWhile (b : bexp) (P : Assertion) (d : dcom).
+(* while b do {{ P }} d end *)
+
+Inductive decorated : Type :=
+  | Decorated : Assertion -> Assertion -> dcom -> decorated.
+
+Fixpoint erase (d : dcom) : com :=
+  match d with
+  | DCSkip           => CSkip
+  | DCSeq d1 d2      => CSeq (erase d1) (erase d2)
+  | DCAsgn X a       => CAsgn X a
+  | DCIf b d1 d2     => CIf b (erase d1) (erase d2)
+  | DCWhile b _ d    => CWhile b (erase d)
+  end.
+
+Definition erase_d (dec : decorated) : com :=
+  match dec with
+  | Decorated P Q d => erase d
+  end.
+
+Example dec_while : decorated :=
+  (Decorated True (X = 0)%assertion (DCWhile (BNeq X 0) (True /\ (X <> 0))%assertion (DCAsgn X (AMinus X 1)))).
+
+Example erase_while_ex :
+    erase_d dec_while
+  = <{while X <> 0 do X := X - 1 end}>.
+Proof.
+  unfold dec_while.
+  reflexivity.
+Qed.
+
+(** It is also straightforward to extract the precondition and
+    postcondition from a decorated program. *)
+
+Definition precondition_from (dec : decorated) : Assertion :=
+  match dec with
+  | Decorated P _ _ => P
+  end.
+
+Definition postcondition_from (dec : decorated) : Assertion :=
+  match dec with
+  | Decorated _ Q _ => Q
+  end.
+
+Example precondition_from_while : precondition_from dec_while = True.
+Proof. reflexivity. Qed.
+
+Example postcondition_from_while : postcondition_from dec_while = (X = 0)%assertion.
+Proof. reflexivity. Qed.
+
+Definition outer_triple_valid (dec : decorated) :=
+  {{precondition_from dec}} erase_d dec {{postcondition_from dec}}.
+
+Example dec_while_triple_correct :
+     outer_triple_valid dec_while
+   =
+     {{ True }}
+       while X <> 0 do X := X - 1 end
+     {{ X = 0 }}.
+Proof. reflexivity. Qed.
+
+Fixpoint verification_conditions' (P Q : Assertion) (dec : dcom) : Prop :=
+  match dec with
+  | DCSkip =>
+      (P ->> Q)
+  | DCSeq d1 d2 =>
+      (exists R, verification_conditions' P R d1
+                 /\ verification_conditions' R Q d2)
+  | DCAsgn X a =>
+      (P ->> Q [X |-> a])
+  | DCIf b d1 d2 =>
+          verification_conditions' (P /\ b) Q d1
+          /\ verification_conditions' (P /\ ~b) Q d2
+  | DCWhile b Inv d =>
+      (P ->> Inv)
+      /\ verification_conditions' (Inv /\ b) Inv d
+      /\ ((Inv  /\ ~ b) ->> Q)%assertion
+  end.
+
+Definition verification_conditions (dec : decorated) :=
+  match dec with
+  | Decorated P Q d => verification_conditions' P Q d
+  end.
+
+(** The following key theorem states that [verification_conditions]
+    does its job correctly.  Not surprisingly, each of the Hoare Logic
+    rules gets used at some point in the proof. *)
+
+Theorem verification_correct : forall P Q d,
+  verification_conditions (Decorated P Q d) -> {{P}} erase d {{Q}}.
+Proof.
+  intros P Q d.
+  generalize P Q.
+  induction d; intros; simpl in *.
+  - (* Skip *)
+    eapply hoare_consequence_pre.
+      + apply hoare_skip.
+      + assumption.
+  - (* Seq *)
+    destruct H as [R [H1 H2]].
+    eapply hoare_seq.
+      + apply IHd2. apply H2.
+      + apply IHd1. apply H1.
+  - (* Asgn *)
+    eapply hoare_consequence_pre.
+      + apply hoare_asgn.
+      + assumption.
+  - (* If *)
+    destruct H as [H1 H2].
+    apply IHd1 in H1. clear IHd1.
+    apply IHd2 in H2. clear IHd2.
+    apply hoare_if; assumption.
+  - (* While *)
+    destruct H as [HEntry [HBody HExit]].
+    eapply hoare_consequence; eauto.
+    apply hoare_while.
+    eapply hoare_consequence_pre; eauto.
+Qed.
+
+Corollary verification_conditions_correct : forall dec,
+  verification_conditions dec ->
+  outer_triple_valid dec.
+Proof.
+  intros [P d]. apply verification_correct.
+Qed.
+
+End Dcom2.
 
 (* ################################################################# *)
 (** * Weakest Preconditions (Optional) *)
@@ -2092,9 +2245,14 @@ Definition is_wp P c Q :=
      while true do X := 0 end
      {{ X = 0 }}
 *)
-(* FILL IN HERE
-
-    [] *)
+(*
+   1) X = 5
+   2) Y + Z = 5
+   3) True
+   4) (Z = 4 /\ X = 0) \/ (W = 3 /\ X <> 0)
+   5) False
+   6) True
+ *)
 
 (** **** Exercise: 3 stars, advanced, optional (is_wp)
 
@@ -2105,7 +2263,23 @@ Definition is_wp P c Q :=
 Theorem is_wp_example :
   is_wp (Y <= 4) <{X := Y + 1}> (X <= 5).
 Proof.
-  (* FILL IN HERE *) Admitted.
+  unfold is_wp. split.
+  - eapply hoare_consequence_pre.
+    + apply hoare_asgn.
+    + verify_assertion.
+  - intros P H st HP.
+    simpl.
+    unfold valid_hoare_triple in H.
+    specialize H with (st) (X !-> st Y + 1; st).
+    simpl in H.
+    rewrite -> t_update_eq in H.
+    assert (st Y + 1 <= 5).
+    + apply H.
+      * apply E_Asgn; auto.
+      * assumption.
+    + lia.
+Qed.
+
 (** [] *)
 
 (** **** Exercise: 2 stars, advanced, optional (hoare_asgn_weakest)
@@ -2116,7 +2290,21 @@ Proof.
 Theorem hoare_asgn_weakest : forall Q X a,
   is_wp (Q [X |-> a]) <{ X := a }> Q.
 Proof.
-(* FILL IN HERE *) Admitted.
+  intros Q X a.
+  unfold is_wp. split.
+  - eapply hoare_consequence_pre.
+    + apply hoare_asgn.
+    + verify_assertion.
+  - intros P H st HP.
+    simpl.
+    unfold valid_hoare_triple in H.
+    specialize H with (st) (X !-> aeval st a; st).
+    unfold assertion_sub.
+    apply H.
+    * apply E_Asgn; reflexivity.
+    * assumption.
+Qed.
+
 (** [] *)
 
 (** **** Exercise: 2 stars, advanced, optional (hoare_havoc_weakest)
@@ -2131,6 +2319,8 @@ Lemma hoare_havoc_weakest : forall (P Q : Assertion) (X : string),
   P ->> havoc_pre X Q.
 Proof.
 (* FILL IN HERE *) Admitted.
+
+(* TODO *)
 End Himp2.
 (** [] *)
 
