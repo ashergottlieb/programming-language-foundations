@@ -2318,9 +2318,21 @@ Lemma hoare_havoc_weakest : forall (P Q : Assertion) (X : string),
   {{ P }} havoc X {{ Q }} ->
   P ->> havoc_pre X Q.
 Proof.
-(* FILL IN HERE *) Admitted.
+  intros P Q X H st HP.
+  (* Note: the first time I tried this I got the error that "havoc_pre" was opaque.
+     I thought that this meant I was unable to unfold because only the signature
+     and not the body of the function were accessible in other compilation units.
+     It turns out, I just didn't rebuild Hoare.v with the definition I provided,
+     so I was using the old definition which probably just had "Admitted".
+     After rebuilding, things work as expected. *)
+  unfold havoc_pre.
+  intros n.
+  unfold valid_hoare_triple in H.
+  apply H with (st:=st).
+  - apply E_Havoc.
+  - assumption.
+Qed.
 
-(* TODO *)
 End Himp2.
 (** [] *)
 
