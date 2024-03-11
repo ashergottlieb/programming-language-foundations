@@ -491,9 +491,24 @@ Qed.
 Lemma wp_invariant : forall b c Q,
     valid (wp <{while b do c end}> Q /\ b) c (wp <{while b do c end}> Q).
 Proof.
+  (* The proposition is considering the statement: [wp <{while b do c end}>]
+     We have to prove that it is a loop invariant.
+
+     The proposition is only looking at a triple over [c], and not [<{while b do c end}>],
+     because only when the loop body is executed with [E_WhileTrue] does an [Assertion]
+     have the opportunity to be invalidated.
+    *)
   intros b c Q st st' Hc [Hwp Hb] st'' Hwp2.
   apply Hwp.
   eapply E_WhileTrue with st'; assumption.
+Qed.
+
+Lemma wp_loop : forall b c Q,
+    valid (wp <{while b do c end}> Q) <{while b do c end}> Q.
+Proof.
+  intros b c Q st st' Hloop HInv.
+  apply HInv.
+  assumption.
 Qed.
 
 (** [] *)
@@ -548,22 +563,29 @@ Proof.
       * apply E_IfFalse; assumption.
       * assumption.
   - (* While *)
-    apply H_Consequence_pre with (P':=wp <{while b do c end}> Q).
-    + eapply H_Consequence_post.
-      * apply H_While.
-        apply IHc.
-        apply wp_invariant.
-      * simpl.
-        intros st [Hwp HNb].
-        apply Bool.not_true_is_false in HNb.
-        unfold wp in Hwp.
-        apply Hwp.
-        apply E_WhileFalse.
-        assumption.
-    + intros st HP st' Hc.
-      eapply HT.
-      * apply Hc.
-      * apply HP.
+    eapply H_Consequence with (P':=wp <{while b do c end}> Q).
+    + apply H_While.
+      (* We can prove the entire while loop is derivable,
+         by using the [H_While] constructor.
+         We then need to show that we can derive
+         [derivable ((wp <{ while b do c end }> Q) /\ b) c (wp <{ while b do c end }> Q)].
+         Basically, we just have to show that the loop invariant is derivable
+         over the body of the loop. *)
+      apply IHc.
+      (* Using the inductive hypothesis, we need to only show that the invariant is valid.
+         We already have a lemma for this. *)
+      apply wp_invariant.
+    + (* Show that precondition [P] is stronger than the weakest precondition of the loop. *)
+      apply wp_is_weakest.
+      assumption. (* HT, which says that [{{P}} while b do c end {{Q}}] is a valid triple *)
+    + (* Show that the postcondition [Q] is weaker than the loop
+         exit condition [wp <{while b do c end}> Q /\ ~b]. *)
+      simpl.
+      intros st [HInv HNb].
+      apply HInv.
+      apply Bool.not_true_is_false in HNb.
+      apply E_WhileFalse.
+      assumption.
 Qed.
 (* TODO: document that, and [wp_invariant] *)
 
