@@ -239,7 +239,30 @@ Qed.
 Theorem provable_true_post : forall c P,
     derivable P c True.
 Proof.
-  (* FILL IN HERE *) Admitted.
+  induction c; intros P.
+  - (* Skip *)
+    eapply H_Consequence_pre.
+    + apply H_Skip.
+    + intros st _. apply I.
+  - (* Asgn *)
+    eapply H_Consequence_pre.
+    + apply H_Asgn.
+    + intros st _. apply I.
+  - (* Seq *)
+    apply H_Seq with (assert True).
+    + apply IHc2.
+    + apply IHc1.
+  - (* If *)
+    apply H_If.
+    + apply IHc1.
+    + apply IHc2.
+  - (* While *)
+    eapply H_Consequence with (P':=assert True) (Q':=assert (True /\ ~b)).
+    + apply H_While.
+      apply IHc.
+    + intros st _. apply I.
+    + intros st _. apply I.
+Qed.
 
 (** [] *)
 
@@ -251,7 +274,41 @@ Proof.
 Theorem provable_false_pre : forall c Q,
     derivable False c Q.
 Proof.
-  (* FILL IN HERE *) Admitted.
+  induction c; intros Q.
+  - (* Skip *)
+    apply H_Consequence_pre with Q.
+    + apply H_Skip.
+    + intros st H.
+      inversion H.
+  - (* Asgn *)
+    eapply H_Consequence_pre.
+    + apply H_Asgn.
+    + intros st H.
+      inversion H.
+  - (* Seq *)
+    eapply H_Seq.
+    + apply IHc2.
+    + apply IHc1.
+  - (* If *)
+    apply H_If.
+    + eapply H_Consequence_pre.
+      * apply IHc1.
+      * intros st [H _].
+        inversion H.
+    + eapply H_Consequence_pre.
+      * apply IHc2.
+      * intros st [H _].
+        inversion H.
+  - (* While *)
+    eapply H_Consequence_post.
+    + apply H_While.
+      eapply H_Consequence_pre.
+      * apply IHc.
+      * intros st [H _].
+        inversion H.
+    + intros st [H _].
+      inversion H.
+Qed.
 
 (** [] *)
 
@@ -289,7 +346,51 @@ Proof.
 Theorem hoare_sound : forall P c Q,
   derivable P c Q -> valid P c Q.
 Proof.
-  (* FILL IN HERE *) Admitted.
+  intros P c Q H.
+  induction H.
+  - (* Skip *)
+    intros st st' Hc.
+    inversion Hc. subst.
+    intros HP. apply HP.
+  - (* Asgn *)
+    intros st st' Hc.
+    inversion Hc. subst.
+    intros HQ. apply HQ.
+  - (* Seq *)
+    intros st st' Hc HP.
+    inversion Hc. subst.
+    unfold valid in *.
+    match goal with
+    | [H0 : st =[ c ]=> ?stm,
+         H1: ?stm =[ d ]=> st' |- _] =>
+        specialize IHderivable1 with stm st';
+        specialize IHderivable2 with st stm
+    end.
+    auto.
+  - (* If *)
+    intros st st' Hc HP.
+    inversion Hc; subst; unfold valid in *.
+    + specialize IHderivable1 with st st'.
+      apply IHderivable1; try split; assumption.
+    + specialize IHderivable2 with st st'.
+      apply IHderivable2; try split; try apply Bool.not_true_iff_false; assumption.
+  - (* While *)
+    intros st st' Hc Hp.
+    remember <{ while b do c end}> as e eqn:Heqe.
+    induction Hc; inversion Heqe; subst; clear Heqe; try discriminate.
+    + (* Guard evaluates to [false] *)
+      split; try apply Bool.not_true_iff_false; assumption.
+    + (* Guard evaluates to [true] *)
+      apply IHHc2; try reflexivity.
+      apply IHderivable with (st:=st); try split; try assumption.
+  - (* Consequence *)
+    intros st st' Hc Hp.
+    apply q.
+    apply IHderivable with (st:=st).
+    + assumption.
+    + apply p. assumption.
+Qed.
+
 (** [] *)
 
 (** The proof of completeness is more challenging.  To carry out the
@@ -306,6 +407,45 @@ Proof.
 
 Definition wp (c:com) (Q:Assertion) : Assertion :=
   fun s => forall s', s =[ c ]=> s' -> Q s'.
+(*
+   When we write: [{{wp c Q}} c {{Q}}],
+   the [s] above which is the parameter of the Assertion [wp c Q],
+   represents the initial state before c is executed.
+
+   The precondition says that for any initial state [s]
+   which reaches a final state [s'] through [c], Q must hold in [s'].
+
+   Equivalently, the contrapositive, which is that:
+   If Q doesn't hold in some final state [s'],
+   there isn't a way for initial state [s] to reach [s'] through [c].
+
+   If we specialize the definition of [valid] wrt the above triple,
+   we get this:
+   valid (wp c Q) c Q : Prop :=
+     st =[ c ]=> st'  ->
+     forall s', st =[ c ]=> s' -> Q s'  ->
+     Q st'.
+   Below, the [wp_is_precondition] theorem shows that this is a tautology.
+
+
+   This is an interesting definition!
+   I think this is defining the precondition in terms of the exact set
+   of [ceval] derivations. (We can think of this like program traces).
+   This is going to be uncomputable in general, since determining what is in [ceval]
+   requires solving the halting problem (I'm pretty sure).
+
+   I'm wondering if this relates to Rice's theorem somehow
+   (I don't know how Rice's theorem is proven).
+
+   I imagine that for some arbitrary program [c], and postcondition [Q],
+   finding if [Q] holds might require finding if the weakest precondition of [c]
+   is [True], which we can't do in the general case.
+   This is something worth looking into...
+
+ *)
+
+
+
 
 Hint Unfold wp : core.
 
@@ -334,7 +474,11 @@ Proof. eauto. Qed.
 Lemma wp_seq : forall P Q c1 c2,
     derivable P c1 (wp c2 Q) -> derivable (wp c2 Q) c2 Q -> derivable P <{c1; c2}> Q.
 Proof.
-  (* FILL IN HERE *) Admitted.
+  intros P Q c1 c2 Hc1 Hc2.
+  eapply H_Seq.
+  - apply Hc2.
+  - apply Hc1.
+Qed.
 
 (** [] *)
 
@@ -347,7 +491,10 @@ Proof.
 Lemma wp_invariant : forall b c Q,
     valid (wp <{while b do c end}> Q /\ b) c (wp <{while b do c end}> Q).
 Proof.
-  (* FILL IN HERE *) Admitted.
+  intros b c Q st st' Hc [Hwp Hb] st'' Hwp2.
+  apply Hwp.
+  eapply E_WhileTrue with st'; assumption.
+Qed.
 
 (** [] *)
 
@@ -369,7 +516,56 @@ Theorem hoare_complete: forall P c Q,
 Proof.
   unfold valid. intros P c. generalize dependent P.
   induction c; intros P Q HT.
-  (* FILL IN HERE *) Admitted.
+  - (* Skip *)
+    eapply H_Consequence_pre.
+    + apply H_Skip.
+    + eauto.
+  - (* Asgn *)
+    eapply H_Consequence_pre.
+    + apply H_Asgn.
+    + eauto.
+  - (* Seq *)
+    apply wp_seq.
+    + apply IHc1.
+      intros st st' Hc1 HP st'' Hc2.
+      apply HT with (st:=st).
+      * apply E_Seq with st'; assumption.
+      * assumption.
+    + apply IHc2.
+      intros st st' Hc2 Hwp.
+      apply Hwp. assumption.
+  - (* If *)
+    apply H_If.
+    + apply IHc1.
+      intros st st' Hc1 [HP Hb].
+      apply HT with (st:=st).
+      * apply E_IfTrue; assumption.
+      * assumption.
+    + apply IHc2.
+      intros st st' Hc2 [HP HNb].
+      apply Bool.not_true_is_false in HNb.
+      apply HT with (st:=st).
+      * apply E_IfFalse; assumption.
+      * assumption.
+  - (* While *)
+    apply H_Consequence_pre with (P':=wp <{while b do c end}> Q).
+    + eapply H_Consequence_post.
+      * apply H_While.
+        apply IHc.
+        apply wp_invariant.
+      * simpl.
+        intros st [Hwp HNb].
+        apply Bool.not_true_is_false in HNb.
+        unfold wp in Hwp.
+        apply Hwp.
+        apply E_WhileFalse.
+        assumption.
+    + intros st HP st' Hc.
+      eapply HT.
+      * apply Hc.
+      * apply HP.
+Qed.
+(* TODO: document that, and [wp_invariant] *)
 
 (** [] *)
 
